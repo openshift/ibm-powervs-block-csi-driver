@@ -16,7 +16,7 @@
 
 
 echo "Repo uses 'go mod'."
-if ! (set -x; env GO111MODULE=on go mod tidy); then
+if ! (set -x; env GO111MODULE=on go mod tidy -compat=1.17); then
     echo "ERROR: vendor check failed."
     exit 1
 elif [ "$(git status --porcelain -- go.mod go.sum | wc -l)" -gt 0 ]; then
