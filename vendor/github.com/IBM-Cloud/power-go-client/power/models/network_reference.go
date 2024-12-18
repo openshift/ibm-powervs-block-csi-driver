@@ -23,6 +23,9 @@ type NetworkReference struct {
 	// access config
 	AccessConfig AccessConfig `json:"accessConfig,omitempty"`
 
+	// crn
+	Crn CRN `json:"crn,omitempty"`
+
 	// DHCP Managed Network
 	DhcpManaged bool `json:"dhcpManaged,omitempty"`
 
@@ -46,6 +49,9 @@ type NetworkReference struct {
 	// Required: true
 	NetworkID *string `json:"networkID"`
 
+	// Network Peer ID
+	PeerID string `json:"peerID,omitempty"`
+
 	// Type of Network - 'vlan' (private network) 'pub-vlan' (public network) 'dhcp-vlan' (for satellite locations only)
 	// Required: true
 	// Enum: ["vlan","pub-vlan","dhcp-vlan"]
@@ -61,6 +67,10 @@ func (m *NetworkReference) Validate(formats strfmt.Registry) error {
 	var res []error
 
 	if err := m.validateAccessConfig(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateCrn(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -104,6 +114,23 @@ func (m *NetworkReference) validateAccessConfig(formats strfmt.Registry) error {
 			return ve.ValidateName("accessConfig")
 		} else if ce, ok := err.(*errors.CompositeError); ok {
 			return ce.ValidateName("accessConfig")
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (m *NetworkReference) validateCrn(formats strfmt.Registry) error {
+	if swag.IsZero(m.Crn) { // not required
+		return nil
+	}
+
+	if err := m.Crn.Validate(formats); err != nil {
+		if ve, ok := err.(*errors.Validation); ok {
+			return ve.ValidateName("crn")
+		} else if ce, ok := err.(*errors.CompositeError); ok {
+			return ce.ValidateName("crn")
 		}
 		return err
 	}
@@ -217,6 +244,10 @@ func (m *NetworkReference) ContextValidate(ctx context.Context, formats strfmt.R
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateCrn(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
@@ -234,6 +265,24 @@ func (m *NetworkReference) contextValidateAccessConfig(ctx context.Context, form
 			return ve.ValidateName("accessConfig")
 		} else if ce, ok := err.(*errors.CompositeError); ok {
 			return ce.ValidateName("accessConfig")
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (m *NetworkReference) contextValidateCrn(ctx context.Context, formats strfmt.Registry) error {
+
+	if swag.IsZero(m.Crn) { // not required
+		return nil
+	}
+
+	if err := m.Crn.ContextValidate(ctx, formats); err != nil {
+		if ve, ok := err.(*errors.Validation); ok {
+			return ve.ValidateName("crn")
+		} else if ce, ok := err.(*errors.CompositeError); ok {
+			return ce.ValidateName("crn")
 		}
 		return err
 	}
