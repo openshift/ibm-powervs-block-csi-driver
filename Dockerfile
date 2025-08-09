@@ -15,14 +15,14 @@
 # Initialized TARGETPLATFORM with default value
 ARG TARGETPLATFORM=linux/amd64
 
-FROM golang:1.24.2 AS builder
+FROM golang:1.24.6 AS builder
 ARG TARGETPLATFORM
 WORKDIR /go/src/sigs.k8s.io/ibm-powervs-block-csi-driver
 ADD . .
 RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver node-update-controller
 
 # debian base image
-FROM registry.k8s.io/build-image/debian-base:bookworm-v1.0.4 AS debian-base
+FROM registry.k8s.io/build-image/debian-base:bookworm-v1.0.5 AS debian-base
 RUN clean-install ca-certificates e2fsprogs mount udev util-linux xfsprogs bash multipath-tools sg3-utils
 COPY --from=builder /go/src/sigs.k8s.io/ibm-powervs-block-csi-driver/bin/* /
 ENTRYPOINT ["/ibm-powervs-block-csi-driver"]
