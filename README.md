@@ -9,6 +9,7 @@ The IBM Power Virtual Systems Container Storage Interface (CSI) Driver provides 
 | PowerVS CSI Driver | Kubernetes | CSI | Golang |
 | ----------------------------- | ----------- | -------- | -------- |
 | main | 1.33.3 | 1.11.0 | 1.24.6 |
+| 0.10.0 | 1.33.3 | 1.11.0 | 1.24.6 |
 | 0.9.0 | 1.32 | 1.11.0 | 1.23 |
 | 0.8.0 | 1.31 | 1.10.0 | 1.23 |
 | 0.7.0 | 1.30 | 1.9.0 | 1.22 |
@@ -76,6 +77,14 @@ kubectl apply -f secret.yaml
 
 #### Deploy driver
 Please see the compatibility matrix above before you deploy the driver
+
+The providerID field in a Node object uniquely identifies the node within a cloud provider's infrastructure, typically set by the cloud provider manager (CCM). However, when deploying clusters using methods like kubeadm or kubespray on cloud platforms, it's crucial to manually set the providerID.
+
+Set the ProviderID on the cluster nodes as: `ibmpowervs://<region>/<zone>/<service_instance_id>/<powervs_machine_id>`, for example:
+```sh
+spec:
+  providerID: ibmpowervs://syd/syd05/862032d5-xxxx-xxxx-xxxx-c18594456427/2c6cbaec-xxxx-xxxx-xxxx-a6aa35315596
+```
 
 To deploy the CSI driver:
 ```sh
