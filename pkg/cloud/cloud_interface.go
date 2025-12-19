@@ -27,14 +27,13 @@ type Cloud interface {
 	DetachDisk(volumeID string, nodeID string) (err error)
 	ResizeDisk(volumeID string, reqSize int64) (newSize int64, err error)
 	CloneDisk(sourceVolumeName string, cloneVolumeName string) (disk *Disk, err error)
-	WaitForVolumeState(volumeID, state string) error
+	WaitForVolumeState(volumeID, state string) (*models.Volume, error)
 	WaitForCloneStatus(taskId string) error
 	GetDiskByName(name string) (disk *Disk, err error)
 	GetDiskByNamePrefix(namePrefix string) (disk *Disk, err error)
 	GetDiskByID(volumeID string) (disk *Disk, err error)
-	GetPVMInstanceByName(instanceName string) (instance *PVMInstance, err error)
-	GetPVMInstanceByID(instanceID string) (instance *PVMInstance, err error)
 	GetPVMInstanceDetails(instanceID string) (*models.PVMInstance, error)
 	UpdateStoragePoolAffinity(instanceID string) error
 	IsAttached(volumeID string, nodeID string) (err error)
+	CheckStorageTierAvailability(storageType string) error
 }

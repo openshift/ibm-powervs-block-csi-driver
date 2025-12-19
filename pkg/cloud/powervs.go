@@ -52,12 +52,7 @@ type powerVSCloud struct {
 	pvmInstancesClient *instance.IBMPIInstanceClient
 	volClient          *instance.IBMPIVolumeClient
 	cloneVolumeClient  *instance.IBMPICloneVolumeClient
-}
-
-type PVMInstance struct {
-	ID       string
-	DiskType string
-	Name     string
+	storageTierClient  *instance.IBMPIStorageTierClient
 }
 
 func NewPowerVSCloud(cloudInstanceID, zone string, debug bool) (Cloud, error) {
@@ -94,54 +89,21 @@ func newPowerVSCloud(cloudInstanceID, zone string, debug bool) (Cloud, error) {
 		return nil, err
 	}
 
-	backgroundContext := context.Background()
-	volClient := instance.NewIBMPIVolumeClient(backgroundContext, piSession, cloudInstanceID)
-	pvmInstancesClient := instance.NewIBMPIInstanceClient(backgroundContext, piSession, cloudInstanceID)
-	cloneVolumeClient := instance.NewIBMPICloneVolumeClient(backgroundContext, piSession, cloudInstanceID)
-
 	return &powerVSCloud{
-		pvmInstancesClient: pvmInstancesClient,
-		volClient:          volClient,
-		cloneVolumeClient:  cloneVolumeClient,
-	}, nil
-}
-
-func (p *powerVSCloud) GetPVMInstanceByName(name string) (*PVMInstance, error) {
-	in, err := p.pvmInstancesClient.GetAll()
-	if err != nil {
-		return nil, err
-	}
-	for _, pvmInstance := range in.PvmInstances {
-		if name == *pvmInstance.ServerName {
-			return &PVMInstance{
-				ID:       *pvmInstance.PvmInstanceID,
-				DiskType: pvmInstance.StorageType,
-				Name:     *pvmInstance.ServerName,
-			}, nil
-		}
-	}
-	return nil, ErrNotFound
-}
-
-func (p *powerVSCloud) GetPVMInstanceByID(instanceID string) (*PVMInstance, error) {
-	in, err := p.pvmInstancesClient.Get(instanceID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &PVMInstance{
-		ID:       *in.PvmInstanceID,
-		DiskType: *in.StorageType,
-		Name:     *in.ServerName,
+		pvmInstancesClient: instance.NewIBMPIInstanceClient(context.Background(), piSession, cloudInstanceID),
+		volClient:          instance.NewIBMPIVolumeClient(context.Background(), piSession, cloudInstanceID),
+		cloneVolumeClient:  instance.NewIBMPICloneVolumeClient(context.Background(), piSession, cloudInstanceID),
+		storageTierClient:  instance.NewIBMPIStorageTierClient(context.Background(), piSession, cloudInstanceID),
 	}, nil
 }
 
 func (p *powerVSCloud) CreateDisk(volumeName string, diskOptions *DiskOptions) (disk *Disk, err error) {
 	var volumeType string
+	start := time.Now()
 	capacityGiB := util.BytesToGiB(diskOptions.CapacityBytes)
 
 	switch diskOptions.VolumeType {
-	case VolumeTypeTier1, VolumeTypeTier3:
+	case VolumeTypeTier1, VolumeTypeTier3, VolumeTypeTier0, VolumeTypeTier5k:
 		volumeType = diskOptions.VolumeType
 	case "":
 		volumeType = DefaultVolumeType
@@ -149,42 +111,60 @@ func (p *powerVSCloud) CreateDisk(volumeName string, diskOptions *DiskOptions) (
 		return nil, fmt.Errorf("invalid PowerVS VolumeType %q", diskOptions.VolumeType)
 	}
 
+	// tier1 and tier3 storages are by default available in all regions.
+	if diskOptions.VolumeType == VolumeTypeTier0 || diskOptions.VolumeType == VolumeTypeTier5k {
+		if err = p.CheckStorageTierAvailability(diskOptions.VolumeType); err != nil {
+			return nil, err
+		}
+	}
+
 	dataVolume := &models.CreateDataVolume{
 		Name:      &volumeName,
-		Size:      ptr.To[float64](float64(capacityGiB)),
+		Size:      ptr.To(float64(capacityGiB)),
 		Shareable: &diskOptions.Shareable,
 		DiskType:  volumeType,
 	}
-
 	v, err := p.volClient.CreateVolume(dataVolume)
 	if err != nil {
 		return nil, err
 	}
-
-	err = p.WaitForVolumeState(*v.VolumeID, VolumeAvailableState)
+	v, err = p.WaitForVolumeState(*v.VolumeID, VolumeAvailableState)
 	if err != nil {
 		return nil, err
 	}
-
+	klog.V(4).Infof("Volume %s has been provisioned successfully, took %v", *v.Name, time.Since(start))
 	return &Disk{CapacityGiB: capacityGiB, VolumeID: *v.VolumeID, DiskType: v.DiskType, WWN: strings.ToLower(v.Wwn)}, nil
 }
 
 func (p *powerVSCloud) DeleteDisk(volumeID string) (err error) {
-	return p.volClient.DeleteVolume(volumeID)
+	klog.V(4).Infof("Deleting Disk with ID: %s", volumeID)
+	start := time.Now()
+	err = p.volClient.DeleteVolume(volumeID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), ErrVolumeNotFound.Error()) {
+			klog.Warningf("Volume %s not found, assuming deleted", volumeID)
+			return nil
+		}
+		return err
+	}
+	klog.V(4).Infof("DeleteDisk: Deleted disk %s successfully. Took %s", volumeID, time.Since(start))
+	return nil
 }
 
 func (p *powerVSCloud) AttachDisk(volumeID string, nodeID string) (err error) {
 	if err = p.volClient.Attach(nodeID, volumeID); err != nil {
 		return err
 	}
-	return p.WaitForVolumeState(volumeID, VolumeInUseState)
+	_, err = p.WaitForVolumeState(volumeID, VolumeInUseState)
+	return err
 }
 
 func (p *powerVSCloud) DetachDisk(volumeID string, nodeID string) (err error) {
 	if err = p.volClient.Detach(nodeID, volumeID); err != nil {
 		return err
 	}
-	return p.WaitForVolumeState(volumeID, VolumeAvailableState)
+	_, err = p.WaitForVolumeState(volumeID, VolumeAvailableState)
+	return err
 }
 
 // IsAttached returns an error if a volume isn't attached to a node, else nil.
@@ -238,23 +218,27 @@ func (p *powerVSCloud) CloneDisk(sourceVolumeID string, cloneVolumeName string) 
 		return nil, errors.New("cloned volume not found")
 	}
 	clonedVolumeID := clonedVolumeDetails.ClonedVolumes[0].ClonedVolumeID
-	err = p.WaitForVolumeState(clonedVolumeID, VolumeAvailableState)
+	_, err = p.WaitForVolumeState(clonedVolumeID, VolumeAvailableState)
 	if err != nil {
 		return nil, err
 	}
 	return p.GetDiskByID(clonedVolumeID)
 }
 
-func (p *powerVSCloud) WaitForVolumeState(volumeID, state string) error {
+func (p *powerVSCloud) WaitForVolumeState(volumeID, state string) (*models.Volume, error) {
 	ctx := context.Background()
-	return wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true, func(ctx context.Context) (bool, error) {
-		v, err := p.volClient.Get(volumeID)
+	var vol *models.Volume
+	var err error
+	klog.V(4).Infof("Waiting for volume %s to be in %q state", volumeID, state)
+	err = wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true, func(ctx context.Context) (bool, error) {
+		vol, err = p.volClient.Get(volumeID)
 		if err != nil {
 			return false, err
 		}
-		spew.Dump(v)
-		return v.State == state, nil
+		spew.Dump(vol)
+		return vol.State == state, nil
 	})
+	return vol, err
 }
 
 func (p *powerVSCloud) WaitForCloneStatus(cloneTaskId string) error {
@@ -283,10 +267,11 @@ func (p *powerVSCloud) GetDiskByName(name string) (disk *Disk, err error) {
 				WWN:         strings.ToLower(*v.Wwn),
 				Shareable:   *v.Shareable,
 				CapacityGiB: int64(*v.Size),
+				State:       *v.State,
 			}, nil
 		}
 	}
-
+	klog.Warningf("Cannot find volume by name %q", name)
 	return nil, ErrNotFound
 }
 
@@ -304,17 +289,17 @@ func (p *powerVSCloud) GetDiskByNamePrefix(namePrefix string) (disk *Disk, err e
 				WWN:         strings.ToLower(*v.Wwn),
 				Shareable:   *v.Shareable,
 				CapacityGiB: int64(*v.Size),
+				State:       *v.State,
 			}, nil
 		}
 	}
-
 	return nil, ErrNotFound
 }
 
 func (p *powerVSCloud) GetDiskByID(volumeID string) (disk *Disk, err error) {
 	v, err := p.volClient.Get(volumeID)
 	if err != nil {
-		if strings.Contains(err.Error(), "Resource not found") {
+		if strings.Contains(strings.ToLower(err.Error()), ErrVolumeNotFound.Error()) {
 			return nil, ErrNotFound
 		}
 		return nil, err
@@ -326,6 +311,7 @@ func (p *powerVSCloud) GetDiskByID(volumeID string) (disk *Disk, err error) {
 		WWN:         strings.ToLower(v.Wwn),
 		Shareable:   *v.Shareable,
 		CapacityGiB: int64(*v.Size),
+		State:       v.State,
 	}, nil
 }
 
@@ -343,7 +329,6 @@ func readCredentials() (string, error) {
 	if apiKey == "" {
 		return "", errors.New("IBMCLOUD_API_KEY is not provided")
 	}
-
 	return apiKey, nil
 }
 
@@ -353,10 +338,28 @@ func readCredentialsFromFile() (string, error) {
 		klog.Warning("API_KEY_PATH is undefined")
 		return "", nil
 	}
-
 	byteData, err := os.ReadFile(apiKeyPath)
 	if err != nil {
 		return "", fmt.Errorf("error reading apikey: %v", err)
 	}
 	return string(byteData), nil
+}
+
+// checkStorageTierAvailability confirms if the provided cloud instance ID supports the required storageType.
+func (p *powerVSCloud) CheckStorageTierAvailability(storageType string) error {
+	// Supported tiers are Tier0, Tier1, Tier3 and Tier 5k
+	// The use of fixed IOPS is limited to volumes with a size of 200 GB or less, which is the break even size with Tier 0
+	// (200 GB @ 25 IOPS/GB = 5000 IOPS).
+	// Ref: https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-on-cloud-architecture#storage-tiers
+	// API Docs for Storagetypes: https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-on-cloud-architecture#IOPS-api
+	storageTiers, err := p.storageTierClient.GetAll()
+	if err != nil {
+		return fmt.Errorf("unable to fetch all volume types for the given cloud instance. err:%v", err)
+	}
+	for _, storageTier := range storageTiers {
+		if storageTier.Name == storageType && *storageTier.State == "inactive" {
+			return fmt.Errorf("the requested volume type is not available in the provided cloud instance. Please retry with a different tier")
+		}
+	}
+	return nil
 }

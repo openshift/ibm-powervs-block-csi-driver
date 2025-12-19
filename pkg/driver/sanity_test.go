@@ -12,7 +12,9 @@ import (
 
 	"github.com/IBM-Cloud/power-go-client/power/models"
 	"github.com/kubernetes-csi/csi-test/pkg/sanity"
+
 	"k8s.io/mount-utils"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/ibm-powervs-block-csi-driver/pkg/cloud"
 	"sigs.k8s.io/ibm-powervs-block-csi-driver/pkg/util"
@@ -134,26 +136,18 @@ func newFakeCloudProvider() *fakeCloudProvider {
 	}
 }
 
-func (p *fakeCloudProvider) GetPVMInstanceByName(name string) (*cloud.PVMInstance, error) {
-	return &cloud.PVMInstance{
-		ID:       name + "-" + "id",
-		DiskType: "tier3",
-		Name:     name,
-	}, nil
-}
-
-func (p *fakeCloudProvider) GetPVMInstanceByID(instanceID string) (*cloud.PVMInstance, error) {
-	return &cloud.PVMInstance{
-		ID:       instanceID,
-		DiskType: "tier3",
-		Name:     strings.Split(instanceID, "-")[0],
-	}, nil
+func (p *fakeCloudProvider) CheckStorageTierAvailability(storageTier string) error {
+	if storageTier == "tier3" || storageTier == "tier1" || storageTier == "tier5k" || storageTier == "tier0" {
+		return nil
+	}
+	return errors.New("not a valid storageTier")
 }
 
 func (p *fakeCloudProvider) GetPVMInstanceDetails(instanceID string) (*models.PVMInstance, error) {
 	return &models.PVMInstance{
 		PvmInstanceID: &instanceID,
 		ServerName:    &strings.Split(instanceID, "-")[0],
+		StorageType:   ptr.To("tier3"),
 	}, nil
 }
 
@@ -212,8 +206,8 @@ func (c *fakeCloudProvider) IsAttached(volumeID string, nodeID string) (err erro
 	return nil
 }
 
-func (c *fakeCloudProvider) WaitForVolumeState(volumeID, expectedState string) error {
-	return nil
+func (c *fakeCloudProvider) WaitForVolumeState(volumeID, expectedState string) (*models.Volume, error) {
+	return &models.Volume{VolumeID: ptr.To("a1b2c3-d4e5f6")}, nil
 }
 
 func (c *fakeCloudProvider) WaitForCloneStatus(cloneTaskId string) error {
@@ -230,7 +224,7 @@ func (c *fakeCloudProvider) GetDiskByName(name string) (*cloud.Disk, error) {
 	} else if len(disks) == 1 {
 		return disks[0].Disk, nil
 	}
-	return nil, nil
+	return nil, cloud.ErrNotFound
 }
 
 func (c *fakeCloudProvider) GetDiskByNamePrefix(namePrefix string) (*cloud.Disk, error) {

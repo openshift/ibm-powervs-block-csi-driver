@@ -21,6 +21,7 @@ import (
 type MockCloud struct {
 	ctrl     *gomock.Controller
 	recorder *MockCloudMockRecorder
+	isgomock struct{}
 }
 
 // MockCloudMockRecorder is the mock recorder for MockCloud.
@@ -54,6 +55,20 @@ func (mr *MockCloudMockRecorder) AttachDisk(volumeID, nodeID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachDisk", reflect.TypeOf((*MockCloud)(nil).AttachDisk), volumeID, nodeID)
 }
 
+// CheckStorageTierAvailability mocks base method.
+func (m *MockCloud) CheckStorageTierAvailability(storageType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckStorageTierAvailability", storageType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CheckStorageTierAvailability indicates an expected call of CheckStorageTierAvailability.
+func (mr *MockCloudMockRecorder) CheckStorageTierAvailability(storageType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckStorageTierAvailability", reflect.TypeOf((*MockCloud)(nil).CheckStorageTierAvailability), storageType)
+}
+
 // CloneDisk mocks base method.
 func (m *MockCloud) CloneDisk(sourceVolumeName, cloneVolumeName string) (*cloud.Disk, error) {
 	m.ctrl.T.Helper()
@@ -64,7 +79,7 @@ func (m *MockCloud) CloneDisk(sourceVolumeName, cloneVolumeName string) (*cloud.
 }
 
 // CloneDisk indicates an expected call of CloneDisk.
-func (mr *MockCloudMockRecorder) CloneDisk(sourceVolumeName, cloneVolumeName interface{}) *gomock.Call {
+func (mr *MockCloudMockRecorder) CloneDisk(sourceVolumeName, cloneVolumeName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloneDisk", reflect.TypeOf((*MockCloud)(nil).CloneDisk), sourceVolumeName, cloneVolumeName)
 }
@@ -152,39 +167,9 @@ func (m *MockCloud) GetDiskByNamePrefix(namePrefix string) (*cloud.Disk, error) 
 }
 
 // GetDiskByNamePrefix indicates an expected call of GetDiskByNamePrefix.
-func (mr *MockCloudMockRecorder) GetDiskByNamePrefix(namePrefix interface{}) *gomock.Call {
+func (mr *MockCloudMockRecorder) GetDiskByNamePrefix(namePrefix any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDiskByNamePrefix", reflect.TypeOf((*MockCloud)(nil).GetDiskByNamePrefix), namePrefix)
-}
-
-// GetPVMInstanceByID mocks base method.
-func (m *MockCloud) GetPVMInstanceByID(instanceID string) (*cloud.PVMInstance, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPVMInstanceByID", instanceID)
-	ret0, _ := ret[0].(*cloud.PVMInstance)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetPVMInstanceByID indicates an expected call of GetPVMInstanceByID.
-func (mr *MockCloudMockRecorder) GetPVMInstanceByID(instanceID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPVMInstanceByID", reflect.TypeOf((*MockCloud)(nil).GetPVMInstanceByID), instanceID)
-}
-
-// GetPVMInstanceByName mocks base method.
-func (m *MockCloud) GetPVMInstanceByName(instanceName string) (*cloud.PVMInstance, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPVMInstanceByName", instanceName)
-	ret0, _ := ret[0].(*cloud.PVMInstance)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetPVMInstanceByName indicates an expected call of GetPVMInstanceByName.
-func (mr *MockCloudMockRecorder) GetPVMInstanceByName(instanceName any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPVMInstanceByName", reflect.TypeOf((*MockCloud)(nil).GetPVMInstanceByName), instanceName)
 }
 
 // GetPVMInstanceDetails mocks base method.
@@ -254,17 +239,18 @@ func (m *MockCloud) WaitForCloneStatus(taskId string) error {
 }
 
 // WaitForCloneStatus indicates an expected call of WaitForCloneStatus.
-func (mr *MockCloudMockRecorder) WaitForCloneStatus(taskId interface{}) *gomock.Call {
+func (mr *MockCloudMockRecorder) WaitForCloneStatus(taskId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForCloneStatus", reflect.TypeOf((*MockCloud)(nil).WaitForCloneStatus), taskId)
 }
 
 // WaitForVolumeState mocks base method.
-func (m *MockCloud) WaitForVolumeState(volumeID, state string) error {
+func (m *MockCloud) WaitForVolumeState(volumeID, state string) (*models.Volume, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "WaitForVolumeState", volumeID, state)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(*models.Volume)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // WaitForVolumeState indicates an expected call of WaitForVolumeState.
