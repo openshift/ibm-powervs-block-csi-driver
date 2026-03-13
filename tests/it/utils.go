@@ -116,7 +116,7 @@ func newCSIClient() (*CSIClient, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		// grpc.WithBlock(),
 		grpc.WithContextDialer(
-			func(context.Context, string) (net.Conn, error) {
+			func(ctx context.Context, _ string) (net.Conn, error) {
 				scheme, addr, err := util.ParseEndpoint(endpoint)
 				if err != nil {
 					return nil, err

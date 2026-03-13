@@ -30,7 +30,8 @@ import (
 )
 
 func runRemoteCommand(publicIP string, arg ...string) (string, error) {
-	args := []string{"-i", sshDefaultKey, "-o", "StrictHostKeyChecking no", fmt.Sprintf("%s@%s", sshUser, publicIP), "--"}
+	args := make([]string, 0, 6+len(arg))
+	args = append(args, "-i", sshDefaultKey, "-o", "StrictHostKeyChecking no", fmt.Sprintf("%s@%s", sshUser, publicIP), "--")
 	args = append(args, arg...)
 
 	// Should we print?; May contain sensitive information
