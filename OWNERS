@@ -3,9 +3,16 @@
 approvers:
   - mkumatag
   - yussufsh
+  - prb112
+  - mjturek
+  - hamzy
 reviewers:
   - mkumatag
   - yussufsh
   - kishen-v
+  - Prashanth684
+  - prb112
+  - mjturek
+  - hamzy
 
 component: "Multi-Arch / IBM P and Z"
