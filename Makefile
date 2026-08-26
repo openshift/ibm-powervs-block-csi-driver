@@ -13,7 +13,7 @@
 # limitations under the License.
 
 PKG=sigs.k8s.io/ibm-powervs-block-csi-driver
-GIT_COMMIT?=$(shell git rev-parse --short HEAD)
+GIT_COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 REGISTRY?=gcr.io/k8s-staging-cloud-provider-ibm
 IMG?=ibm-powervs-block-csi-driver
@@ -48,31 +48,26 @@ test:
 
 .PHONY: image
 image:
-	docker build -t $(REGISTRY)/$(IMG):$(TAG) . --target centos-base
+	docker build -t $(REGISTRY)/$(IMG):$(TAG) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		. --target centos-base
 
 .PHONY: push
 push:
 	docker push $(REGISTRY)/$(IMG):$(TAG)
 
-build-image-and-push-linux-amd64: init-buildx
-	{                                                                   \
-	set -e ;                                                            \
-	docker buildx build \
-		--build-arg TARGETPLATFORM=linux/amd64 \
-		-t $(REGISTRY)/$(IMG):$(TAG)_linux_amd64 --push . --target centos-base; \
+build-and-push-multi-arch: init-buildx
+	{                                                                       \
+	set -e ;                                                                \
+	BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx build \
+		--builder multiarch-multiplatform-builder \
+		--platform linux/amd64,linux/ppc64le \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(REGISTRY)/$(IMG):$(TAG) \
+		--push . --target centos-base; \
 	}
-
-build-image-and-push-linux-ppc64le: init-buildx
-	{                                                                   \
-	set -e ;                                                            \
-	docker buildx build \
-		--build-arg TARGETPLATFORM=linux/ppc64le \
-		-t $(REGISTRY)/$(IMG):$(TAG)_linux_ppc64le --push . --target centos-base; \
-	}
-
-build-and-push-multi-arch: build-image-and-push-linux-amd64 build-image-and-push-linux-ppc64le
-	docker manifest create --amend $(REGISTRY)/$(IMG):$(TAG) $(REGISTRY)/$(IMG):$(TAG)_linux_amd64 $(REGISTRY)/$(IMG):$(TAG)_linux_ppc64le
-	docker manifest push -p $(REGISTRY)/$(IMG):$(TAG)
 
 .PHONY: release-alias-tag
 release-alias-tag: # Adds the tag to the last build tag.
@@ -90,13 +85,16 @@ clean:
 bin/mockgen: | bin
 	go install go.uber.org/mock/mockgen@v0.6.0
 
+bin/ginkgo: | bin
+	go install github.com/onsi/ginkgo/v2/ginkgo@v2.32.0
+
 bin/golangci-lint: | bin
 	echo "Installing golangci-lint..."
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v2.11.2
+	curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.11.2
 
 bin/govulncheck: | bin
 	echo "Installing govulncheck..."
-	go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+	go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
 mockgen: bin/mockgen
 	./hack/update-gomock
@@ -122,7 +120,7 @@ init-buildx:
 	# Ensure we use a builder that can leverage it (the default on linux will not)
 	-docker buildx rm multiarch-multiplatform-builder
 	docker buildx create --use --name=multiarch-multiplatform-builder
-	docker run --rm --privileged multiarch/qemu-user-static --reset --credential yes --persistent yes
+	docker run --rm --privileged tonistiigi/binfmt@sha256:8f58e6214f4cc9dc83ce8f5acad1ece508eb6b20e696a8c1e9f274481982c541 --install amd64,ppc64le # tonistiigi/binfmt:qemu-v10.0.4
 	# Register gcloud as a Docker credential helper.
 	# Required for "docker buildx build --push".
 	gcloud auth configure-docker --quiet
@@ -130,5 +128,5 @@ init-buildx:
 test-integration:
 	go test -v -timeout 100m sigs.k8s.io/ibm-powervs-block-csi-driver/tests/it -run ^TestIntegration$
 
-test-e2e:
-	go test -v -timeout 100m sigs.k8s.io/ibm-powervs-block-csi-driver/tests/e2e -run ^TestE2E$
+test-e2e: bin/ginkgo
+	$(GOBIN)/ginkgo --procs=5 --timeout=100m -v ./tests/e2e/...
