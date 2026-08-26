@@ -16,6 +16,7 @@ package driver
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 
@@ -294,6 +295,55 @@ func TestNodeStageVolume(t *testing.T) {
 			},
 			volumeLock:   true,
 			expectedCode: codes.Aborted,
+		},
+		{
+			name: "fail invalid fsType",
+			request: &csi.NodeStageVolumeRequest{
+				PublishContext:    map[string]string{WWNKey: volumeWWN},
+				StagingTargetPath: targetPath,
+				VolumeCapability: &csi.VolumeCapability{
+					AccessType: &csi.VolumeCapability_Mount{
+						Mount: &csi.VolumeCapability_MountVolume{
+							FsType: "ntfs",
+						},
+					},
+					AccessMode: &csi.VolumeCapability_AccessMode{
+						Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+					},
+				},
+				VolumeId: volumeID,
+			},
+			expectMock: func(mockMounter *mocks.MockMounter, mockDevice *mocks.MockLinuxDevice) {
+				NewDevice = func(wwn string) device.LinuxDevice { return mockDevice }
+				mockDevice.EXPECT().Populate(false).Return(nil)
+				mockDevice.EXPECT().GetMapper().Return(devicePath).Times(1)
+				mockMounter.EXPECT().IsLikelyNotMountPoint(gomock.Any()).Return(true, nil)
+			},
+			expectedCode: codes.Internal,
+		},
+		{
+			name: "success valid fsType case-insensitive (EXT4)",
+			request: &csi.NodeStageVolumeRequest{
+				PublishContext:    map[string]string{WWNKey: volumeWWN},
+				StagingTargetPath: targetPath,
+				VolumeCapability: &csi.VolumeCapability{
+					AccessType: &csi.VolumeCapability_Mount{
+						Mount: &csi.VolumeCapability_MountVolume{
+							FsType: "EXT4",
+						},
+					},
+					AccessMode: &csi.VolumeCapability_AccessMode{
+						Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+					},
+				},
+				VolumeId: volumeID,
+			},
+			expectMock: func(mockMounter *mocks.MockMounter, mockDevice *mocks.MockLinuxDevice) {
+				commonExpectMock(mockMounter, mockDevice)
+				mockMounter.EXPECT().GetDeviceName(gomock.Eq(targetPath)).Return(targetPath, 1, nil)
+				mockMounter.EXPECT().ExistsPath(gomock.Any()).Return(true, nil)
+				mockMounter.EXPECT().FormatAndMount(gomock.Eq(devicePath), gomock.Eq(targetPath), gomock.Any(), gomock.Any()).Return(nil)
+			},
 		},
 	}
 
@@ -912,7 +962,58 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					VolumeId:   "vol-test",
 				}
 
+				mockMounter.EXPECT().IsLikelyNotMountPoint(targetPath).Return(false, nil)
 				mockMounter.EXPECT().Unmount(targetPath).Return(nil)
+				_, err := powervsDriver.NodeUnpublishVolume(context.TODO(), req)
+				if err != nil {
+					t.Fatalf("Expect no error but got: %v", err)
+				}
+			},
+		},
+		{
+			name: "success target already not mounted",
+			testFunc: func(t *testing.T) {
+				mockCtl := gomock.NewController(t)
+				defer mockCtl.Finish()
+
+				mockMounter := mocks.NewMockMounter(mockCtl)
+
+				powervsDriver := &nodeService{
+					mounter:     mockMounter,
+					volumeLocks: util.NewVolumeLocks(),
+				}
+
+				req := &csi.NodeUnpublishVolumeRequest{
+					TargetPath: targetPath,
+					VolumeId:   "vol-test",
+				}
+
+				mockMounter.EXPECT().IsLikelyNotMountPoint(targetPath).Return(true, nil)
+				_, err := powervsDriver.NodeUnpublishVolume(context.TODO(), req)
+				if err != nil {
+					t.Fatalf("Expect no error but got: %v", err)
+				}
+			},
+		},
+		{
+			name: "success target path does not exist",
+			testFunc: func(t *testing.T) {
+				mockCtl := gomock.NewController(t)
+				defer mockCtl.Finish()
+
+				mockMounter := mocks.NewMockMounter(mockCtl)
+
+				powervsDriver := &nodeService{
+					mounter:     mockMounter,
+					volumeLocks: util.NewVolumeLocks(),
+				}
+
+				req := &csi.NodeUnpublishVolumeRequest{
+					TargetPath: targetPath,
+					VolumeId:   "vol-test",
+				}
+
+				mockMounter.EXPECT().IsLikelyNotMountPoint(targetPath).Return(false, os.ErrNotExist)
 				_, err := powervsDriver.NodeUnpublishVolume(context.TODO(), req)
 				if err != nil {
 					t.Fatalf("Expect no error but got: %v", err)
@@ -979,6 +1080,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					VolumeId:   "vol-test",
 				}
 
+				mockMounter.EXPECT().IsLikelyNotMountPoint(targetPath).Return(false, nil)
 				mockMounter.EXPECT().Unmount(targetPath).Return(errors.New("test Unmount error"))
 				_, err := powervsDriver.NodeUnpublishVolume(context.TODO(), req)
 				expectErr(t, err, codes.Internal)
