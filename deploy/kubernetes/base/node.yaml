@@ -1,0 +1,125 @@
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: powervs-csi-node
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: ibm-powervs-block-csi-driver
+spec:
+  selector:
+    matchLabels:
+      app: powervs-csi-node
+      app.kubernetes.io/name: ibm-powervs-block-csi-driver
+  template:
+    metadata:
+      labels:
+        app: powervs-csi-node
+        app.kubernetes.io/name: ibm-powervs-block-csi-driver
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: ppc64le
+      hostNetwork: true
+      serviceAccountName: powervs-csi-node-sa
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: powervs-plugin
+          securityContext:
+            privileged: true
+          image: registry.k8s.io/cloud-provider-ibm/ibm-powervs-block-csi-driver:main
+          imagePullPolicy: Always
+          args:
+            - node
+            - --endpoint=$(CSI_ENDPOINT)
+          # - --volume-attach-limit=42
+            - --logtostderr
+            - --v=5
+            - --debug
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:/csi/csi.sock
+            - name: CSI_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: API_KEY_PATH
+              value: /etc/secrets/IBMCLOUD_API_KEY
+          volumeMounts:
+            - name: ibm-secret
+              mountPath: /etc/secrets
+              readOnly: true
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: "Bidirectional"
+            - name: plugin-dir
+              mountPath: /csi
+            - name: device-dir
+              mountPath: /dev
+            - name: sys-dir
+              mountPath: /sys
+          ports:
+            - name: healthz
+              containerPort: 9808
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 5
+        - name: node-driver-registrar
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.1
+          args:
+            - --csi-address=$(ADDRESS)
+            - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+            - --v=5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/powervs.csi.ibm.com-reg.sock /csi/csi.sock"]
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/powervs.csi.ibm.com/csi.sock
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+        - name: liveness-probe
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+          args:
+            - --csi-address=/csi/csi.sock
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+      volumes:
+        - name: kubelet-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/powervs.csi.ibm.com/
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+        - name: device-dir
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: sys-dir
+          hostPath:
+            path: /sys
+            type: Directory
+        - name: ibm-secret
+          secret:
+            secretName: ibm-secret

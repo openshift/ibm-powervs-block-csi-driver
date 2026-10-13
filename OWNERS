@@ -1,0 +1,11 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+approvers:
+  - mkumatag
+  - yussufsh
+reviewers:
+  - mkumatag
+  - yussufsh
+  - kishen-v
+
+component: "Multi-Arch / IBM P and Z"

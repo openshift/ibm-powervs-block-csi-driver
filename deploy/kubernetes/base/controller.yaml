@@ -1,0 +1,140 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: powervs-csi-controller
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: ibm-powervs-block-csi-driver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: powervs-csi-controller
+      app.kubernetes.io/name: ibm-powervs-block-csi-driver
+  template:
+    metadata:
+      labels:
+        app: powervs-csi-controller
+        app.kubernetes.io/name: ibm-powervs-block-csi-driver
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccountName: powervs-csi-controller-sa
+      priorityClassName: system-cluster-critical
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: powervs-plugin
+          image: registry.k8s.io/cloud-provider-ibm/ibm-powervs-block-csi-driver:main
+          imagePullPolicy: Always
+          args:
+            # - {all,controller,node} # specify the driver mode
+            - --endpoint=$(CSI_ENDPOINT)
+            - --logtostderr
+            - --v=5
+            - --debug
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: CSI_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: API_KEY_PATH
+              value: /etc/secrets/IBMCLOUD_API_KEY
+          volumeMounts:
+            - name: ibm-secret
+              mountPath: /etc/secrets
+              readOnly: true
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          ports:
+            - name: healthz
+              containerPort: 9808
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 5
+        - name: node-update-controller
+          image: registry.k8s.io/cloud-provider-ibm/ibm-powervs-block-csi-driver:main
+          command: ["/node-update-controller"]
+          env:
+            - name: API_KEY_PATH
+              value: /etc/secrets/IBMCLOUD_API_KEY
+          ports:
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+            - name: healthz
+              containerPort: 8082
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 5
+            timeoutSeconds: 10
+            periodSeconds: 30
+          volumeMounts:
+            - name: ibm-secret
+              mountPath: /etc/secrets
+              readOnly: true
+        - name: csi-provisioner
+          image: registry.k8s.io/sig-storage/csi-provisioner:v5.0.1
+          args:
+            - --csi-address=$(ADDRESS)
+            - --v=5
+            - --feature-gates=Topology=true
+            - --leader-election
+            #- --leader-election-type=leases
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-attacher
+          image: registry.k8s.io/sig-storage/csi-attacher:v4.6.1
+          args:
+            - --csi-address=$(ADDRESS)
+            - --timeout=120s
+            - --v=5
+            - --leader-election=true
+            #- --leader-election-type=leases
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-resizer
+          image: registry.k8s.io/sig-storage/csi-resizer:v1.9.4
+          args:
+            - --csi-address=$(ADDRESS)
+            - --v=2
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: liveness-probe
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+          args:
+            - --csi-address=/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: ibm-secret
+          secret:
+            secretName: ibm-secret

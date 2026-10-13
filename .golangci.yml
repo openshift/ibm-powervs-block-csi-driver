@@ -1,0 +1,189 @@
+version: "2"
+run:
+  build-tags:
+    - tools
+    - e2e
+  allow-parallel-runners: true
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bodyclose
+    - containedctx
+    - copyloopvar
+    - decorder
+    - dogsled
+    - errcheck
+    - errchkjson
+    - goconst
+    - gocyclo
+    - godot
+    - goprintffuncname
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - reassign
+    - rowserrcheck
+    #- staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - whitespace
+  settings:
+    gocritic:
+      disabled-checks:
+        - appendAssign
+        - dupImport
+        - evalOrder
+        - ifElseChain
+        - octalLiteral
+        - regexpSimplify
+        - sloppyReassign
+        - truncateCmp
+        - typeDefFirst
+        - unnamedResult
+        - unnecessaryDefer
+        - whyNoLint
+        - wrapperFunc
+      enabled-tags:
+        - experimental
+    gocyclo:
+      min-complexity: 20
+    godot:
+      scope: toplevel
+      exclude:
+        - ^ \+.*
+        - ^ ANCHOR.*
+    gosec:
+      excludes:
+        - G307
+        - G108
+    staticcheck:
+      checks:
+        - all
+        # QF1006: could lift into loop condition
+        - -QF1006
+        # QF1007: could merge conditional assignment into variable declaration
+        - -QF1007
+        # QF1008 could remove embedded field from selector
+        - -QF1008
+        # ST1001: should not use dot imports
+        - -ST1001
+    importas:
+      alias:
+        - pkg: k8s.io/api/core/v1
+          alias: corev1
+        - pkg: k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
+          alias: apiextensionsv1
+        - pkg: k8s.io/apimachinery/pkg/apis/meta/v1
+          alias: metav1
+        - pkg: k8s.io/apimachinery/pkg/api/errors
+          alias: apierrors
+        - pkg: k8s.io/apimachinery/pkg/util/errors
+          alias: kerrors
+        - pkg: sigs.k8s.io/controller-runtime
+          alias: ctrl
+      no-unaliased: true
+    nolintlint:
+      require-specific: true
+      allow-unused: false
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - revive
+        text: 'exported: exported method .*\.(Reconcile|SetupWithManager|SetupWebhookWithManager) should have comment or be unexported'
+      - linters:
+          - errcheck
+        text: Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*print(f|ln)?|os\.(Un)?Setenv). is not checked
+      - linters:
+          - revive
+        text: exported (method|function|type|const) (.+) should have comment or be unexported
+        source: (func|type).*Fake.*
+      - linters:
+          - revive
+        path: fake_\.go
+        text: exported (method|function|type|const) (.+) should have comment or be unexported
+      - linters:
+          - revive
+        path: (framework|e2e)/.*.go
+        text: exported (method|function|type|const) (.+) should have comment or be unexported
+      - linters:
+          - unparam
+        text: always receives
+      - path: _test\.go
+        text: should not use dot imports
+      - path: (framework|e2e)/.*.go
+        text: should not use dot imports
+      - path: _test\.go
+        text: cyclomatic complexity
+      - linters:
+          - gocritic
+        text: 'appendAssign: append result not assigned to the same slice'
+      - linters:
+          - staticcheck
+        path: .*(api|types)\/.*\/.*conversion.*\.go$
+        text: 'SA1019: in.(.+) is deprecated'
+      - linters:
+          - revive
+        path: .*(api|types)\/.*\/.*conversion.*\.go$
+        text: exported (method|function|type|const) (.+) should have comment or be unexported
+      - linters:
+          - revive
+        path: .*(api|types)\/.*\/.*conversion.*\.go$
+        text: 'var-naming: don''t use underscores in Go names;'
+      - linters:
+          - revive
+        path: .*(api|types)\/.*\/.*conversion.*\.go$
+        text: 'receiver-naming: receiver name'
+      - linters:
+          - staticcheck
+        path: .*(api|types)\/.*\/.*conversion.*\.go$
+        text: 'ST1003: should not use underscores in Go names;'
+      - linters:
+          - staticcheck
+        path: .*(api|types)\/.*\/.*conversion.*\.go$
+        text: 'ST1016: methods on the same type should have the same receiver name'
+      - linters:
+          - gocritic
+        path: _test\.go
+        text: 'deferInLoop: Possible resource leak, ''defer'' is called in the ''for'' loop'
+    paths:
+      - zz_generated.*\.go$
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/IBM)
+        - prefix(k8s.io)
+        - prefix(sigs.k8s.io)
+        - blank
+        - dot
+  exclusions:
+    generated: lax
+    paths:
+      - zz_generated.*\.go$
+      - third_party$
+      - builtin$
+      - examples$
+      - _test\.go
